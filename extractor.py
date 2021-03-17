@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from skimage.measure import ransac
 from skimage.transform import EssentialMatrixTransform
+import g2o
 
 def add_ones(x):
     return np.concatenate([x, np.ones((x.shape[0], 1))], axis=1)
@@ -19,61 +20,62 @@ def extractRt(E):
     Rt = np.concatenate([R,t.reshape(3,1)], axis=1)
     return Rt
 
-class Extractor(object):
-    GX = 16//2
-    GY = 12//2
+def extract(img):
+    orb = cv2.ORB_create()
 
-    def __init__(self, K):
-        self.orb = cv2.ORB_create()
-        self.bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+    # Detection
+    pts = cv2.goodFeaturesToTrack(np.mean(img, axis=-1).astype(np.uint8), 3000, qualityLevel=0.01, minDistance=3)
+
+    # Extraction
+    kps = [cv2.KeyPoint(f[0][0], f[0][1], 20) for f in pts]
+    kps, des = orb.compute(img, kps)
+
+
+    return np.array([(kp.pt[0], kp.pt[1]) for kp in kps]), des
+
+def normalize(Kinv, pts):
+    return np.dot(Kinv, add_ones(pts).T).T[:, 0:2]
+
+def denormalize(K, pt):
+    ret = np.dot(K, [pt[0], pt[1], 1.0])
+    ret /= ret[2]
+    return int(round(ret[0])), int(round(ret[1]))
+
+
+class Matcher(object):
+    def __init__(self):
         self.last = None
+
+
+def match(f1, f2):
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+    matches = bf.knnMatch(f1.des, f2.des, k=2)
+
+    # Lowe's ratio test
+    ret = []
+    for m, n in matches:
+        if m.distance < 0.75*n.distance:
+            p1 = f1.pts[m.queryIdx]
+            p2 = f2.pts[m.trainIdx]
+            ret.append((p1, p2))
+
+    assert len(ret) >= 8
+    ret = np.array(ret)
+
+    # Fit matrix
+    model, inliers = ransac((ret[:, 0], 
+                            ret[:, 1]), EssentialMatrixTransform, min_samples=8, residual_threshold=0.005, max_trials=200)
+    
+    # Ignore outliers
+    ret = ret[inliers]
+    Rt = extractRt(model.params)
+
+    return ret, Rt
+
+
+class Frame(object):
+    def __init__(self, img, K):
         self.K = K
         self.Kinv = np.linalg.inv(self.K)
-
-    def normalize(self, pts):
-        return np.dot(self.Kinv, add_ones(pts).T).T[:, 0:2]
-
-    def denormalize(self, pt):
-        ret = np.dot(self.K, [pt[0], pt[1], 1.0])
-        return int(round(ret[0])), int(round(ret[1]))
-
-    def extract(self, img):
-        # Detection
-        feats = cv2.goodFeaturesToTrack(np.mean(img, axis=-1).astype(np.uint8), 3000, qualityLevel=0.01, minDistance=3)
-
-        # Extraction
-        kps = [cv2.KeyPoint(f[0][0], f[0][1], 20) for f in feats]
-        kps, des = self.orb.compute(img, kps)
-
-        # Matching
-        ret = []
-        if self.last is not None:
-            matches = self.bf.knnMatch(des, self.last['des'], k=2)
-            for m, n in matches:
-                if m.distance < 0.75*n.distance:
-                    kp1 = kps[m.queryIdx].pt
-                    kp2 = self.last['kps'][m.trainIdx].pt
-                    ret.append((kp1, kp2))
-
-
-        # Filter
-        Rt = None
-        if len(ret) > 0:
-            ret = np.array(ret)
-            # Normalize coords: Subtract to move to 0
-            print(img.shape)
-            ret[:, 0, :] = self.normalize(ret[:, 0, :])
-            ret[:, 1, :] = self.normalize(ret[:, 1, :])
-            # ret[:, 1, :] = np.dot(self.Kinv, add_ones(ret[:,1,:]).T).T[:, 0:2]
-
-            model, inliers = ransac((ret[:, 0], 
-                                    ret[:, 1]), EssentialMatrixTransform, min_samples=8, residual_threshold=0.005, max_trials=200)
-            
-            ret = ret[inliers]
-
-            Rt = extractRt(model.params)
-
-        self.last = {'kps': kps, 'des': des}
-
-        return ret, Rt
-
+        pts, self.des = extract(img)
+        self.pts = normalize(self.Kinv, pts)
