@@ -1,10 +1,23 @@
 import cv2
 import numpy as np
 from skimage.measure import ransac
-from skimage.transform import FundamentalMatrixTransform
+from skimage.transform import EssentialMatrixTransform
 
 def add_ones(x):
     return np.concatenate([x, np.ones((x.shape[0], 1))], axis=1)
+
+def extractRt(E):
+    W = np.mat([[0,-1,0],[1,0,0],[0,0,1]])
+    U,d,Vt = np.linalg.svd(E)
+    assert np.linalg.det(U) > 0
+    if np.linalg.det(Vt) < 0:
+        Vt *= -1
+    R = np.dot(np.dot(U, W), Vt)
+    if np.sum(R.diagonal()) < 0:
+        R = np.dot(np.dot(U, W.T), Vt)
+    t = U[:, 2]
+    Rt = np.concatenate([R,t.reshape(3,1)], axis=1)
+    return Rt
 
 class Extractor(object):
     GX = 16//2
@@ -44,6 +57,7 @@ class Extractor(object):
 
 
         # Filter
+        Rt = None
         if len(ret) > 0:
             ret = np.array(ret)
             # Normalize coords: Subtract to move to 0
@@ -53,13 +67,13 @@ class Extractor(object):
             # ret[:, 1, :] = np.dot(self.Kinv, add_ones(ret[:,1,:]).T).T[:, 0:2]
 
             model, inliers = ransac((ret[:, 0], 
-                                    ret[:, 1]), FundamentalMatrixTransform, min_samples=8, residual_threshold=1, max_trials=100)
+                                    ret[:, 1]), EssentialMatrixTransform, min_samples=8, residual_threshold=0.005, max_trials=200)
             
-            s,v,d = np.linalg.svd(model.params)
-
             ret = ret[inliers]
+
+            Rt = extractRt(model.params)
 
         self.last = {'kps': kps, 'des': des}
 
-        return ret
+        return ret, Rt
 
