@@ -4,29 +4,77 @@ from extractor import Frame, denormalize, match_frames, IRt
 import time
 import numpy as np
 import g2o
+from multiprocessing import Process, Queue
+
+import pangolin
+import OpenGL.GL as gl
 
 # Camera intrinsics
 W, H = 1920//2, 1080//2
 F = 270
 K = np.array(([F, 0, W//2], [0,F,H//2], [0, 0, 1]))
 
-display = Display(W, H)
+#display = Display(W, H)
 
 # Global map
 class Map(object):
     def __init__(self):
         self.frames = []
         self.points = []
+        self.state = None
+        self.q = Queue()
+        p = Process(target=self.viewer_thread, args=(self.q,))
+        p.daemon = True
+        p.start()
+
+    def viewer_thread(self, q):
+        self.viewer_init()
+        while True:
+            self.viewer_refresh(q)
+
+    def viewer_init(self):
+        pangolin.CreateWindowAndBind('Main', 640, 480)
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        self.scam = pangolin.OpenGlRenderState(
+            pangolin.ProjectionMatrix(640, 480, 420, 420, 320, 240, 0.2, 100),
+            pangolin.ModelViewLookAt(-2, 2, -2, 0, 0, 0, pangolin.AxisDirection.AxisY))
+        self.handler = pangolin.Handler3D(self.scam)
+        
+        self.dcam = pangolin.CreateDisplay()
+        self.dcam.SetBounds(0.0, 1.0, 0.0, 1.0, -640.0/480.0)
+        self.dcam.SetHandler(self.handler)
+        self.darr = None
+
+    def viewer_refresh(self, q):
+        if self.state is None or not q.empty():
+            self.state = q.get()
+        ppts = np.array([d[:3, 3] for d in self.state[0]])
+        spts = np.array(self.state[1])
+
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        gl.glClearColor(1.0, 1.0, 1.0, 1.0)
+        self.dcam.Activate(self.scam)
+
+
+        gl.glPointSize(10)
+        gl.glColor3f(0.0, 1.0, 0.0)
+        pangolin.DrawPoints(ppts)
+
+        gl.glPointSize(2)
+        gl.glColor3f(0.0, 1.0, 0.0)
+        pangolin.DrawPoints(spts)
+
+        pangolin.FinishFrame()
+
     
     def display(self):
+        poses, pts = [], []
         for f in self.frames:
-            print(f.id)
-            print(f.pose)
-            print()
-        #for p in points:
-        #    print(p.id)
-        #    print(p.pose)
-        #    print()
+            poses.append(f.pose)
+
+        for p in self.points:
+            pts.append(p.pt)
+        self.q.put((poses, pts))
 
 mapp = Map()
 
@@ -36,7 +84,7 @@ class Point(object):
 
     def __init__(self, mapp, loc):
         self.frames = []
-        self.xyz = loc
+        self.pt = loc
         self.idxs = []
 
         self.id = len(mapp.points)
@@ -67,11 +115,8 @@ def process_frame(img):
     pts4d /= pts4d[:, 3:]
 
 
-    # Reject points without enough "Parallax"
-    # reject points behind the camera
-    #good_pts4d = (np.abs(pts4d[:, 3]) > 0.005 & (pts4d[:, 2] > 0))
+    # Reject points without enough "Parallax" and points behind the camera
     good_pts4d = (np.abs(pts4d[:, 3]) > 0.005) & (pts4d[:, 2] > 0)
-    #pts4d = pts4d[good_pts4d]
 
     for i, p in enumerate(pts4d):
         if not good_pts4d[i]:
@@ -87,7 +132,7 @@ def process_frame(img):
         cv2.circle(img, (u1,v1), 3, (0,255,0))
         cv2.line(img, (u1,v1), (u2, v2), (255,0,0))
 
-    display.paint(img)
+    #display.paint(img)
 
     # 3-D
     mapp.display()
