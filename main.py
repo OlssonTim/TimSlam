@@ -4,100 +4,19 @@ from extractor import Frame, denormalize, match_frames, IRt
 import time
 import numpy as np
 import g2o
-from multiprocessing import Process, Queue
-
-import pangolin
-import OpenGL.GL as gl
+from pointmap import Map, Point
 
 # Camera intrinsics
 W, H = 1920//2, 1080//2
 F = 270
 K = np.array(([F, 0, W//2], [0,F,H//2], [0, 0, 1]))
+Kinv = np.linalg.inv(K)
 
 display = Display(W, H)
-
-# Global map
-class Map(object):
-    def __init__(self):
-        self.frames = []
-        self.points = []
-        self.state = None
-        self.q = Queue()
-        p = Process(target=self.viewer_thread, args=(self.q,))
-        p.daemon = True
-        p.start()
-
-    def viewer_thread(self, q):
-        self.viewer_init()
-        while True:
-            self.viewer_refresh(q)
-
-    def viewer_init(self):
-        pangolin.CreateWindowAndBind('Main', 640, 480)
-        gl.glEnable(gl.GL_DEPTH_TEST)
-        self.scam = pangolin.OpenGlRenderState(
-            pangolin.ProjectionMatrix(640, 480, 420, 420, 320, 240, 0.2, 1000),
-            pangolin.ModelViewLookAt(0, -30, -20, 0, 0, 0, 0, -1, 0))
-        self.handler = pangolin.Handler3D(self.scam)
-        
-        self.dcam = pangolin.CreateDisplay()
-        self.dcam.SetBounds(0.0, 1.0, 0.0, 1.0, -640.0/480.0)
-        self.dcam.SetHandler(self.handler)
-        self.darr = None
-
-    def viewer_refresh(self, q):
-        if self.state is None or not q.empty():
-            self.state = q.get()
-        ppts = np.array([d[:3, 3] for d in self.state[0]])
-        spts = np.array(self.state[1])
-
-        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
-        gl.glClearColor(1.0, 1.0, 1.0, 1.0)
-        self.dcam.Activate(self.scam)
-
-
-        gl.glPointSize(10)
-        gl.glColor3f(0.0, 1.0, 0.0)
-        pangolin.DrawPoints(ppts)
-
-        gl.glPointSize(2)
-        gl.glColor3f(0.0, 1.0, 0.0)
-        pangolin.DrawPoints(spts)
-
-        pangolin.FinishFrame()
-
-    
-    def display(self):
-        poses, pts = [], []
-        for f in self.frames:
-            poses.append(f.pose)
-
-        for p in self.points:
-            pts.append(p.pt)
-        self.q.put((poses, pts))
-
 mapp = Map()
-
-class Point(object):
-    # A Point is a 3-D point in the world
-    # Each point is observed in multiple frames
-
-    def __init__(self, mapp, loc):
-        self.frames = []
-        self.pt = loc
-        self.idxs = []
-
-        self.id = len(mapp.points)
-        mapp.points.append(self)
-
-    def add_observation(self, frame, idx):
-        # Frame is the frame class
-        self.frames.append(frame)
-        self.idxs.append(idx)
 
 def triangulate(pose1, pose2, pts1, pts2):
     return cv2.triangulatePoints(pose1[:3], pose2[:3], pts1.T, pts2.T).T
-
 
 def process_frame(img):
     img = cv2.resize(img, (W, H))
@@ -132,9 +51,10 @@ def process_frame(img):
         cv2.circle(img, (u1,v1), 3, (0,255,0))
         cv2.line(img, (u1,v1), (u2, v2), (255,0,0))
 
+    # 2-D display
     display.paint(img)
 
-    # 3-D
+    # 3-D display
     mapp.display()
 
 if __name__== "__main__":
