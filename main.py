@@ -14,7 +14,7 @@ W, H = 1920//2, 1080//2
 F = 270
 K = np.array(([F, 0, W//2], [0,F,H//2], [0, 0, 1]))
 
-#display = Display(W, H)
+display = Display(W, H)
 
 # Global map
 class Map(object):
@@ -36,8 +36,8 @@ class Map(object):
         pangolin.CreateWindowAndBind('Main', 640, 480)
         gl.glEnable(gl.GL_DEPTH_TEST)
         self.scam = pangolin.OpenGlRenderState(
-            pangolin.ProjectionMatrix(640, 480, 420, 420, 320, 240, 0.2, 100),
-            pangolin.ModelViewLookAt(-2, 2, -2, 0, 0, 0, pangolin.AxisDirection.AxisY))
+            pangolin.ProjectionMatrix(640, 480, 420, 420, 320, 240, 0.2, 1000),
+            pangolin.ModelViewLookAt(0, -30, -20, 0, 0, 0, 0, -1, 0))
         self.handler = pangolin.Handler3D(self.scam)
         
         self.dcam = pangolin.CreateDisplay()
@@ -132,7 +132,7 @@ def process_frame(img):
         cv2.circle(img, (u1,v1), 3, (0,255,0))
         cv2.line(img, (u1,v1), (u2, v2), (255,0,0))
 
-    #display.paint(img)
+    display.paint(img)
 
     # 3-D
     mapp.display()
