@@ -42,11 +42,11 @@ class Map(object):
         self.dcam.Activate(self.scam)
 
         gl.glLineWidth(1)
-        gl.glColor3f(1.0, 0.0, 0.0)
+        gl.glColor3f(0.0, 1.0, 0.0)
         pangolin.DrawCameras(self.state[0])
 
         gl.glPointSize(2)
-        gl.glColor3f(0.0, 1.0, 0.0)
+        gl.glColor3f(1.0, 0.0, 0.0)
         pangolin.DrawPoints(self.state[1])
 
         pangolin.FinishFrame()
