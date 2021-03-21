@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from skimage.measure import ransac
-from skimage.transform import EssentialMatrixTransform
+from skimage.transform import FundamentalMatrixTransform
 import g2o
 
 def add_ones(x):
@@ -11,9 +11,9 @@ def add_ones(x):
 IRt = np.eye(4)
 #IRt[:, :3] = np.eye(3)
 
-def extractPose(E):
+def extractPose(F):
     W = np.mat([[0,-1,0],[1,0,0],[0,0,1]])
-    U,d,Vt = np.linalg.svd(E)
+    U,d,Vt = np.linalg.svd(F)
     assert np.linalg.det(U) > 0
     if np.linalg.det(Vt) < 0:
         Vt *= -1
@@ -24,13 +24,14 @@ def extractPose(E):
     ret = np.eye(4)
     ret[:3, :3] = R
     ret[:3, 3] = t
+    print(d)
     return ret
 
 def extract(img):
     orb = cv2.ORB_create()
 
     # Detection
-    pts = cv2.goodFeaturesToTrack(np.mean(img, axis=-1).astype(np.uint8), 3000, qualityLevel=0.01, minDistance=3)
+    pts = cv2.goodFeaturesToTrack(np.mean(img, axis=-1).astype(np.uint8), 1000, qualityLevel=0.01, minDistance=10)
 
     # Extraction
     kps = [cv2.KeyPoint(f[0][0], f[0][1], 20) for f in pts]
@@ -61,12 +62,17 @@ def match_frames(f1, f2):
     idx1, idx2 = [], []
     for m, n in matches:
         if m.distance < 0.75*n.distance:
-            # Keep idxs
-            idx1.append(m.queryIdx)
-            idx2.append(m.trainIdx)
             p1 = f1.pts[m.queryIdx]
             p2 = f2.pts[m.trainIdx]
-            ret.append((p1, p2))
+            
+            # Distance test
+            if np.linalg.norm((p1-p2)) < 0.1:
+                # Keep idxs
+                idx1.append(m.queryIdx)
+                idx2.append(m.trainIdx)
+                ret.append((p1, p2))
+                pass
+
 
     assert len(ret) >= 8
     ret = np.array(ret)
@@ -75,7 +81,7 @@ def match_frames(f1, f2):
 
     # Fit matrix
     model, inliers = ransac((ret[:, 0], 
-                            ret[:, 1]), EssentialMatrixTransform, min_samples=8, residual_threshold=0.005, max_trials=200)
+                            ret[:, 1]), FundamentalMatrixTransform, min_samples=8, residual_threshold=0.005, max_trials=200)
     
     # Ignore outliers
     ret = ret[inliers]

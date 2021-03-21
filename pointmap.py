@@ -10,6 +10,9 @@ class Map(object):
         self.frames = []
         self.points = []
         self.state = None
+        self.q = None
+
+    def create_viewer(self):
         self.q = Queue()
         p = Process(target=self.viewer_thread, args=(self.q,))
         p.daemon = True
@@ -24,7 +27,7 @@ class Map(object):
         pangolin.CreateWindowAndBind('Main', w, h)
         gl.glEnable(gl.GL_DEPTH_TEST)
         self.scam = pangolin.OpenGlRenderState(
-            pangolin.ProjectionMatrix(w, h, 420, 420, w//2, h//2, 0.2, 1000),
+            pangolin.ProjectionMatrix(w, h, 420, 420, w//2, h//2, 0.2, 10000),
             pangolin.ModelViewLookAt(0, -10, -8, 0, 0, 0, 0, -1, 0))
         self.handler = pangolin.Handler3D(self.scam)
         
@@ -53,6 +56,8 @@ class Map(object):
 
     
     def display(self):
+        if self.q is None:
+            return
         poses, pts = [], []
         for f in self.frames:
             poses.append(f.pose)

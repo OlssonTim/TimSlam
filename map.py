@@ -9,6 +9,9 @@ class Map(object):
         self.frames = []
         self.points = []
         self.state = None
+        self.q = None
+
+    def create_viewer(self):
         self.q = Queue()
         p = Process(target=self.viewer_thread, args=(self.q,))
         p.daemon = True
@@ -52,6 +55,8 @@ class Map(object):
 
     
     def display(self):
+        if self.q is None:
+            return
         poses, pts = [], []
         for f in self.frames:
             poses.append(f.pose)

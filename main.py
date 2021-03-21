@@ -14,6 +14,7 @@ Kinv = np.linalg.inv(K)
 
 display = Display(W, H)
 mapp = Map()
+mapp.create_viewer()
 
 def triangulate(pose1, pose2, pts1, pts2):
     ret = np.zeros((pts1.shape[0], 4))
